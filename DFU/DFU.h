@@ -102,25 +102,19 @@ typedef struct file_suffix_t
 
 }file_suffix;
 
-typedef enum e_product 
-{
-	atmega32u2
-}product;
 
 class DFU
 {
 	uint16_t vid;
 	uint16_t pid;
-	product device_name;
 	libusb_context *ctx = NULL; //a libusb session
 	libusb_device_handle *dev_handle;
 
 public:
 
 	DFU();
-	DFU(	uint16_t vid,
-			uint16_t pid,
-			product device_name);
+	DFU(uint16_t vid, uint16_t pid);
+	DFU(uint16_t vid, uint16_t pid, libusb_device_handle* dev_handle);
 
 	dfu_error init();
 
@@ -140,7 +134,7 @@ public:
 
 	dfu_error abortDFU();
 
-	dfu_error programData(uint8_t* data, file_suffix suffix, uint16_t start, uint16_t end, uint8_t memory);
+	dfu_error programData(uint8_t* data, uint16_t start, uint16_t length, uint8_t memory);
 
 	dfu_error readData(uint8_t* data, uint16_t start, uint16_t end, uint8_t memory);
 

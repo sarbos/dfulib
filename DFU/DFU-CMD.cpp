@@ -10,7 +10,7 @@ using namespace std;
 
 int main()
 {
-	DFU test(0x03EB, 0x2FF0, product::atmega32u2);
+	DFU test(0x03EB, 0x2FF0);
 	test.init();
 	test.eraseChip();
 	status_response status;

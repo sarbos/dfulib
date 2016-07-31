@@ -6,12 +6,20 @@ DFU::DFU()
 	
 }
 
-DFU::DFU(uint16_t _vid, uint16_t _pid, product _device_name) 
+DFU::DFU(uint16_t _vid, uint16_t _pid) 
 {
 	vid = _vid;
 	pid = _pid;
-	device_name = _device_name;
+
 }
+
+DFU::DFU(uint16_t _vid, uint16_t _pid, libusb_device_handle* _dev_handle)
+{
+	vid = _vid;
+	pid = _pid;
+	dev_handle = _dev_handle;
+}
+
 
 DFU::~DFU() 
 {
@@ -43,7 +51,7 @@ dfu_error DFU::init()
 		return dfu_error::USB_ACCESS;
 	}
 
-	//attempt to get dfu functional descriptor, does not work.
+	//attempt to get dfu functional descriptor, does not work on atmel devices.
 	/*
 	unsigned char data[9];
 	error = libusb_get_descriptor(dev_handle, 0x21, 0, data, 7);
@@ -63,40 +71,8 @@ dfu_error DFU::detach(int timeout)
 dfu_error DFU::download(uint8_t* data, int length, int block) 
 {
 
-	unsigned char* fw_ptr;
-	//generate the suffix
-	file_suffix suffix;
-	suffix.idVendor =	0xFFFF;
-	suffix.idProduct =	0xFFFF;
-	suffix.bcdDevice =	0xFFFF;
-	//calculate the CRC
-	int num_packets = ((length - suffix.bLength) / 1024) + 1;
-	int error = 0;
-	int block;
-	status_response status;
-	for (block = 0; block < num_packets-1; block++) 
-	{
-		fw_ptr = &data[block * 1024];
-		//send packet
-		error = libusb_control_transfer(dev_handle, REQUEST_TYPE_TO_DEVICE, dfu_request_type::dnload, block, 4, fw_ptr, 1024, 0);
-		//get status
-		if (error < 0) return dfu_error(error);
-		error = getStatus(status);
-		if (error < 0) return dfu_error(error);
-		//check status
-	}
-
-	//last packet
-	int last_len = length % 1024;
-	unsigned char trans_buf[1024];
-	
-	//copy the last fw data to the buffer
-	memcpy(trans_buf, fw_ptr, last_len);
-	//copy over the file suffix to te buffer
-	memcpy(&trans_buf[last_len], &suffix, sizeof(suffix));
-
-	error = libusb_control_transfer(dev_handle, REQUEST_TYPE_TO_DEVICE, dfu_request_type::dnload, block, 4, trans_buf, last_len+16, 0);
-
+	int error = libusb_control_transfer(dev_handle, REQUEST_TYPE_TO_DEVICE, dfu_request_type::dnload, block, 4, data, length, 0);
+	return (dfu_error)error;
 }
 
 //dfu_error DFU::upload(uint8_t* data, int length, int block) {}
@@ -146,7 +122,7 @@ dfu_error DFU::abortDFU()
 
 dfu_error DFU::blankCheck(status_response &status, uint16_t start, uint16_t end) 
 {
-	unsigned char read_cmd[6] = { 0x03, 0x01, start, end };
+	unsigned char read_cmd[6] = { 0x03, 0x01, unsigned char(start & 0xFF), unsigned char(start>>8), unsigned char(end & 0xFF), unsigned char(end>>8)};
 	int error = libusb_control_transfer(dev_handle, REQUEST_TYPE_TO_DEVICE, dfu_request_type::dnload, 0, 4, read_cmd, 6, 0);
 	error = getStatus(status);
 	return (dfu_error)error;
@@ -177,8 +153,41 @@ dfu_error DFU::readConfig(uint16_t command, uint8_t* data)
 
 }
 
-/*dfu_error DFU::programData(uint8_t* data, file_suffix suffix, uint16_t start, uint16_t end, uint8_t memory) 
+dfu_error DFU::programData(uint8_t* data, uint16_t start, uint16_t length, uint8_t memory) 
 {
-	unsigned char fw_buf[66000];
-	int error = libusb_control_transfer(dev_handle, REQUEST_TYPE_TO_DEVICE, dfu_request_type::dnload, 0, 4, fw_buf, 6, 0);
-}*/
+	unsigned char* fw_ptr;
+	//generate the suffix
+	file_suffix suffix;
+	suffix.idVendor = 0xFFFF;
+	suffix.idProduct = 0xFFFF;
+	suffix.bcdDevice = 0xFFFF;
+	//calculate the CRC
+	int num_packets = ((length - suffix.bLength) / 1024) + 1;
+	int error = 0;
+	int block;
+	status_response status;
+	fw_ptr = &data[0];
+	for (block = 0; block < num_packets - 1; block++)
+	{
+		fw_ptr = &data[block * 1024];
+		//send packet
+		error = download(fw_ptr, 1024, block);
+		//get status
+		if (error < 0) return dfu_error(error);
+		error = getStatus(status);
+		if (error < 0) return dfu_error(error);
+		//check status
+	}
+
+	//last packet
+	int last_len = length % 1024;
+	unsigned char trans_buf[1024];
+
+	//copy the last fw data to the buffer
+	memcpy(trans_buf, fw_ptr, last_len);
+	//copy over the file suffix to te buffer
+	memcpy(&trans_buf[last_len], &suffix, sizeof(suffix));
+
+	error = libusb_control_transfer(dev_handle, REQUEST_TYPE_TO_DEVICE, dfu_request_type::dnload, block, 4, trans_buf, last_len + 16, 0);
+	return (dfu_error)error;
+}

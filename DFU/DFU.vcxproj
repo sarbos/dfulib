@@ -144,9 +144,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <Text Include="ReadMe.txt" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="DFU.h" />
     <ClInclude Include="libusb-1.0\libusb.h" />
     <ClInclude Include="stdafx.h" />
