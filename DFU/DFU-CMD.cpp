@@ -3,7 +3,6 @@
 
 #include "stdafx.h"
 #include <iostream>
-#include "libusb-1.0\libusb.h"
 #include "DFU.h"
 
 using namespace std;

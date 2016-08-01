@@ -1,5 +1,16 @@
 #include "stdafx.h"
 #include "DFU.h"
+#include "crc32.h"
+
+uint32_t calc_CRC(uint8_t* data, int length)
+{
+	uint32_t crc = 0;
+	for (int i = 0; i < length; i++)
+	{
+		_crc(crc, data[i]);
+	}
+	return crc;
+}
 
 DFU::DFU() 
 {
@@ -161,7 +172,15 @@ dfu_error DFU::programData(uint8_t* data, uint16_t start, uint16_t length, uint8
 	suffix.idVendor = 0xFFFF;
 	suffix.idProduct = 0xFFFF;
 	suffix.bcdDevice = 0xFFFF;
-	//calculate the CRC
+	//calculate the CRC of the file
+	uint32_t crc = calc_CRC(data, length);
+	uint8_t* suf_buf = (uint8_t*)&suffix;
+	//add the crc of the rest of the suffix
+	for (int i = 0; i < (sizeof(suffix) - sizeof(suffix.dwCRC)); i++) 
+	{
+		_crc(crc, suf_buf[i]);
+	}
+	suffix.dwCRC = crc;
 	int num_packets = ((length - suffix.bLength) / 1024) + 1;
 	int error = 0;
 	int block;
