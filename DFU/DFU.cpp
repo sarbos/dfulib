@@ -2,15 +2,27 @@
 #include "DFU.h"
 #include "crc32.h"
 
-uint32_t calc_CRC(uint8_t* data, int length)
+
+//generate the suffix and append it to the buffer. 
+//Assumes you have 
+int appendSuffix(uint8_t* data, int length) 
 {
-	uint32_t crc = 0;
-	for (int i = 0; i < length; i++)
-	{
-		_crc(crc, data[i]);
-	}
-	return crc;
+	//generate the suffix
+	file_suffix suffix;
+	suffix.idVendor = 0xFFFF;
+	suffix.idProduct = 0xFFFF;
+	suffix.bcdDevice = 0xFFFF;
+	//calculate the CRC of the file
+	
+	uint8_t* suf_buf = (uint8_t*)&suffix;
+	memcpy(&data[length], suf_buf, 16);
+	uint32_t crc = calc_CRC(data, length+12);
+	memcpy(&data[length+12], &crc, 4);
+	return 0;
 }
+
+
+
 
 DFU::DFU() 
 {
@@ -133,7 +145,7 @@ dfu_error DFU::abortDFU()
 
 dfu_error DFU::blankCheck(status_response &status, uint16_t start, uint16_t end) 
 {
-	unsigned char read_cmd[6] = { 0x03, 0x01, unsigned char(start & 0xFF), unsigned char(start>>8), unsigned char(end & 0xFF), unsigned char(end>>8)};
+	unsigned char read_cmd[6] = { 0x03, 0x01, unsigned char(start >> 8), unsigned char(start & 0xFF), unsigned char(end >> 8), unsigned char(end & 0xFF)};
 	int error = libusb_control_transfer(dev_handle, REQUEST_TYPE_TO_DEVICE, dfu_request_type::dnload, 0, 4, read_cmd, 6, 0);
 	error = getStatus(status);
 	return (dfu_error)error;
@@ -164,49 +176,73 @@ dfu_error DFU::readConfig(uint16_t command, uint8_t* data)
 
 }
 
+
+int generateBlock(uint8_t* buffer, uint8_t* data, uint16_t start_addr, uint16_t data_remaining, uint16_t &data_size)
+{
+	//figure out length of data
+	int max_data_size = 1024 - 32 - sizeof(file_suffix);
+	int alignment = start_addr % 32;
+	data_size = max_data_size - alignment;
+	if (data_remaining < data_size) 
+	{
+		data_size = data_remaining;
+	}
+	uint16_t end_addr = start_addr + data_size;
+	uint8_t prog[32] = { 0x01, 0x00, uint8_t(start_addr >> 8), uint8_t(start_addr & 0xFF), uint8_t(end_addr >> 8), uint8_t(end_addr & 0xFF) };
+	//copy command 32 bytes
+	memcpy(buffer, prog, 32);
+
+	//pad data for alignment
+	memset(&buffer[32], 0, alignment);
+
+	//copy data
+	memcpy(&buffer[32 + alignment], data, data_size);
+	//copy suffix
+
+	//return length of packet
+	return data_size+ alignment;
+
+}
+
 dfu_error DFU::programData(uint8_t* data, uint16_t start, uint16_t length, uint8_t memory) 
 {
 	unsigned char* fw_ptr;
 	//generate the suffix
-	file_suffix suffix;
-	suffix.idVendor = 0xFFFF;
-	suffix.idProduct = 0xFFFF;
-	suffix.bcdDevice = 0xFFFF;
-	//calculate the CRC of the file
-	uint32_t crc = calc_CRC(data, length);
-	uint8_t* suf_buf = (uint8_t*)&suffix;
-	//add the crc of the rest of the suffix
-	for (int i = 0; i < (sizeof(suffix) - sizeof(suffix.dwCRC)); i++) 
-	{
-		_crc(crc, suf_buf[i]);
-	}
-	suffix.dwCRC = crc;
-	int num_packets = ((length - suffix.bLength) / 1024) + 1;
+			
+	int num_packets = ((length - sizeof(file_suffix)) / 1024) + 1;
 	int error = 0;
 	int block;
+
 	status_response status;
+	uint16_t end_addr = start + 1024 - 32 - 16;
+	unsigned char prg_start[32] = {0x01, 0x00, 0x00, 0x00, uint8_t(end_addr>>8), uint8_t(end_addr & 0xFF) };
+
 	fw_ptr = &data[0];
-	for (block = 0; block < num_packets - 1; block++)
+
+	for (block = 0; block < num_packets; block++)
 	{
-		fw_ptr = &data[block * 1024];
+		uint8_t block_buf[1024];
+		uint16_t size_sent;
+		int packet_length = generateBlock(block_buf, fw_ptr, start, length - (fw_ptr - data), size_sent);
+		fw_ptr += packet_length - size_sent;
+
 		//send packet
-		error = download(fw_ptr, 1024, block);
+		error = download(block_buf, packet_length + 32 + 16, block);
 		//get status
-		if (error < 0) return dfu_error(error);
+		if (error < 0)
+		{
+			return dfu_error(error);
+		}
 		error = getStatus(status);
-		if (error < 0) return dfu_error(error);
-		//check status
+		if (error < 0) 
+		{
+			return dfu_error(error);
+		}
+		start += size_sent;
 	}
 
-	//last packet
-	int last_len = length % 1024;
-	unsigned char trans_buf[1024];
+	//zlp
+	error = download(NULL, 0, 0);
 
-	//copy the last fw data to the buffer
-	memcpy(trans_buf, fw_ptr, last_len);
-	//copy over the file suffix to te buffer
-	memcpy(&trans_buf[last_len], &suffix, sizeof(suffix));
-
-	error = libusb_control_transfer(dev_handle, REQUEST_TYPE_TO_DEVICE, dfu_request_type::dnload, block, 4, trans_buf, last_len + 16, 0);
 	return (dfu_error)error;
 }

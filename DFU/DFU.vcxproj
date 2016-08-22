@@ -146,13 +146,18 @@
   <ItemGroup>
     <ClInclude Include="crc32.h" />
     <ClInclude Include="DFU.h" />
+    <ClInclude Include="hex_parser.h" />
     <ClInclude Include="libusb-1.0\libusb.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="crc32.cpp" />
     <ClCompile Include="DFU-CMD.cpp" />
     <ClCompile Include="DFU.cpp" />
+    <ClCompile Include="hex_parser.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
